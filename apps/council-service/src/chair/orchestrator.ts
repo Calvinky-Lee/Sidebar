@@ -92,9 +92,10 @@ async function runMemberPhase(
     }),
   );
 
+  // settled and active are the same length and order (both derived from active.map above).
   for (let i = 0; i < settled.length; i++) {
-    const result = settled[i];
-    const member = active[i];
+    const result = settled[i]!;
+    const member = active[i]!;
     if (result.status === 'fulfilled') {
       outputs.set(member.id, result.value.output);
     } else {

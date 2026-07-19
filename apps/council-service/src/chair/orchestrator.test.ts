@@ -113,7 +113,7 @@ describe('orchestrator — one member times out during statements', () => {
     const types = emitter.events.map((e) => e.type);
     const recusedEvents = emitter.events.filter((e) => e.type === 'agent_recused');
     expect(recusedEvents.length).toBe(1);
-    expect(recusedEvents[0].payload).toMatchObject({ personaId: 'gambler', reason: 'timeout' });
+    expect(recusedEvents[0]!.payload).toMatchObject({ personaId: 'gambler', reason: 'timeout' });
 
     expect(types.filter((t) => t === 'statement_done').length).toBe(3);
     expect(types.filter((t) => t === 'rebuttal_done').length).toBe(3);
