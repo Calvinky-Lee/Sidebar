@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import type { VectorPoint } from "@council/contract";
+import { DiversityMeter } from "@/components/hq/DiversityMeter";
 import { HUES } from "@/lib/blobs";
 import type { MemberView } from "@/lib/session-store";
 
@@ -43,6 +44,10 @@ export function VectorGraph({
             >
               ✕
             </button>
+          </div>
+
+          <div className="mt-4">
+            <DiversityMeter score={diversityScore} baselineRatio={baselineRatio} />
           </div>
 
           {!vectorMap ? (
@@ -90,13 +95,6 @@ export function VectorGraph({
                   );
                 })}
               </svg>
-
-              {diversityScore !== undefined && (
-                <p className="mt-2 text-center font-sans text-xs text-ink-soft">
-                  diversity {diversityScore.toFixed(2)}
-                  {baselineRatio !== undefined ? ` · ${baselineRatio.toFixed(1)}× baseline` : ""}
-                </p>
-              )}
             </>
           )}
         </motion.aside>

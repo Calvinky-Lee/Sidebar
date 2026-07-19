@@ -6,7 +6,6 @@ import { BackgroundDoodles } from "@/components/BackgroundDoodles";
 import { Chair } from "@/components/hq/Chair";
 import { Crystallization } from "@/components/hq/Crystallization";
 import { DecisionTheater } from "@/components/hq/DecisionTheater";
-import { DiversityMeter } from "@/components/hq/DiversityMeter";
 import { PhaseTracker } from "@/components/hq/PhaseTracker";
 import { PinnedPanel } from "@/components/hq/PinnedPanel";
 import { SeatRing } from "@/components/hq/SeatRing";
@@ -78,7 +77,7 @@ export function HqScene({ sessionId }: HqSceneProps) {
         )}
 
         <div className="relative mx-auto aspect-[16/10] min-h-[22rem] w-full max-w-4xl flex-1">
-          {state.councilSize ? (
+          {state.councilSize && (
             <SeatRing
               councilSize={state.councilSize}
               seatOrder={state.seatOrder}
@@ -86,22 +85,21 @@ export function HqScene({ sessionId }: HqSceneProps) {
               onPin={(title, text) => setPinned({ title, text })}
               dissentPersonaId={dissentPersonaId}
             />
-          ) : (
-            <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-hand text-lg text-ink-soft">
-              convening the council…
-            </p>
           )}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <Chair size={84} focused={isFocused} clickable={hasVerdict} onClick={() => setVerdictOpen(true)} />
-            {state.status === "done" && (
-              <div className="pointer-events-none absolute -bottom-2 -right-2">
-                <Crystallization members={state.members} small />
-              </div>
+          <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3">
+            <div className="relative">
+              <Chair size={84} focused={isFocused} clickable={hasVerdict} onClick={() => setVerdictOpen(true)} />
+              {state.status === "done" && (
+                <div className="pointer-events-none absolute -bottom-2 -right-2">
+                  <Crystallization members={state.members} small />
+                </div>
+              )}
+            </div>
+            {!state.councilSize && (
+              <p className="font-hand text-lg text-ink-soft">loading…</p>
             )}
           </div>
         </div>
-
-        <DiversityMeter score={state.diversityScore} baselineRatio={state.baselineRatio} />
 
         {connectionError && (
           <p className="font-sans text-xs text-terracotta">{connectionError}</p>

@@ -12,7 +12,9 @@ export interface SeatPosition {
 
 const CENTER = 50;
 const RX = 38; // ellipse horizontal radius (% of container) — wider than tall,
-const RY = 32; //  to suit a 16:9 projector and ease crowding at N=5/6.
+const RY = 26; //  to suit a 16:9 projector and ease crowding at N=5/6; also
+                //  leaves headroom so the top seat's face doodles and bounce
+                //  animation don't reach the dilemma-summary card above the box.
 
 /** Places N seats evenly around the center at 360°/N spacing, seat 0 at the top. */
 export function seatLayout(n: number): SeatPosition[] {
