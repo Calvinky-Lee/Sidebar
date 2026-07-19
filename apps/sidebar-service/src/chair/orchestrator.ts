@@ -76,20 +76,29 @@ async function runMemberPhase(
   deltaEventType: string,
   doneEventType: string,
   run: (member: PersonaForBrief) => Promise<MemberPhaseOutput>,
+  // Extra fields for the start event's payload. `statement_started` requires
+  // `phase: 'opening'` per the contract (spec 02); the real emitter schema-
+  // validates and rejects it without this, recusing every member. (The
+  // InMemoryEmitter used in unit tests does not validate, so this only shows
+  // up against the real emitter — hence it slipped past the orchestrator tests.)
+  startPayloadExtra: Record<string, unknown> = {},
+  // Contract key for the locked stance on the done event: statement_done/
+  // rebuttal_done use `stance`, but closing_done uses `finalStance` (spec 02).
+  doneStanceKey: 'stance' | 'finalStance' = 'stance',
 ): Promise<{ outputs: Map<string, MemberPhaseOutput>; recused: Set<string> }> {
   const outputs = new Map<string, MemberPhaseOutput>();
   const recused = new Set<string>();
 
   const settled = await Promise.allSettled(
     active.map(async (member) => {
-      await emit(startEventType, { personaId: member.id });
+      await emit(startEventType, { personaId: member.id, ...startPayloadExtra });
       const output = await withTimeout(run(member), timeoutMs);
       await emit(deltaEventType, { personaId: member.id, text: output.fullText });
       await emit(doneEventType, {
         personaId: member.id,
         fullText: output.fullText,
         bubble: output.bubble,
-        stance: toStance(output),
+        [doneStanceKey]: toStance(output),
       });
       return { member, output };
     }),
@@ -218,6 +227,7 @@ export async function runDeliberation(
     'statement_delta',
     'statement_done',
     (member) => runStatement(deps.modelClient, member, briefs.get(member.id)!, dilemma),
+    { phase: 'opening' }, // contract requires statement_started.phase (spec 02)
   );
   firstTokenMs = Date.now() - startedAt;
   recusedCount += statementRun.recused.size;
@@ -275,6 +285,8 @@ export async function runDeliberation(
       const opposingPoint = strongestOpposingPoint(member, active, rebuttalRun.outputs);
       return runClosing(deps.modelClient, member, postRebuttal, opposingPoint);
     },
+    {}, // no extra start-payload fields for closing_started
+    'finalStance', // closing_done uses `finalStance`, not `stance` (spec 02)
   );
   recusedCount += closingRun.recused.size;
   active = active.filter((m) => !closingRun.recused.has(m.id));
