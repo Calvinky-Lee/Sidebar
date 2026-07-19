@@ -1,4 +1,5 @@
 import { getDb } from '../db/client.js'
+import { cosineSim } from './mmr.js'
 
 export type PersonaWithEmbedding = {
   id: string
@@ -25,31 +26,45 @@ export async function retrievePool(
   k: number = POOL_SIZE,
 ): Promise<PersonaWithEmbedding[]> {
   const db = await getDb()
-  const docs = await db
-    .collection('personas')
-    .aggregate([
-      {
-        $vectorSearch: {
-          index: VECTOR_INDEX,
-          queryVector,
-          path: 'embedding',
-          numCandidates: NUM_CANDIDATES,
-          limit: k,
+  const projection = { _id: 1, name: 1, archetype: 1, avatar: 1, profile: 1, stanceProfile: 1, embedding: 1 }
+
+  let docs: any[] = []
+  try {
+    docs = await db
+      .collection('personas')
+      .aggregate([
+        {
+          $vectorSearch: {
+            index: VECTOR_INDEX,
+            queryVector,
+            path: 'embedding',
+            numCandidates: NUM_CANDIDATES,
+            limit: k,
+          },
         },
-      },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          archetype: 1,
-          avatar: 1,
-          profile: 1,
-          stanceProfile: 1,
-          embedding: 1,
-        },
-      },
-    ])
-    .toArray()
+        { $project: projection },
+      ])
+      .toArray()
+  } catch {
+    // $vectorSearch throws if the Atlas index doesn't exist — fall through to
+    // the in-memory path below rather than failing the whole session.
+    docs = []
+  }
+
+  // Fallback: no ANN index available (not created yet, still building, or the
+  // Atlas tier's FTS-index slots are exhausted), so $vectorSearch returned
+  // nothing. Rank the whole library by cosine in memory — trivial at this scale
+  // (hundreds of 1024-dim vectors is sub-millisecond) and keeps casting working
+  // without depending on Atlas Search. When the index IS present, the branch
+  // above wins and this never runs.
+  if (docs.length === 0) {
+    const all = await db.collection('personas').find({}, { projection }).toArray()
+    docs = all
+      .map((d) => ({ d, sim: cosineSim(queryVector, (d.embedding as number[]) ?? []) }))
+      .sort((a, b) => b.sim - a.sim)
+      .slice(0, k)
+      .map(({ d }) => d)
+  }
 
   return docs.map((d) => {
     const voice = d.profile?.voice
