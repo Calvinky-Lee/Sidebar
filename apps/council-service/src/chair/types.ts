@@ -85,3 +85,13 @@ export const SituationBriefSchema = z.object({
   initialRead: z.string().min(1).max(140),
 });
 export type SituationBrief = z.infer<typeof SituationBriefSchema>;
+
+// Shared structured output for statement/rebuttal/closing — mirrors the
+// statement_done/rebuttal_done/closing_done event payloads (spec 02): the full
+// in-voice prose, the structured Stance, and spec 04's "bubble rule" — a
+// first-person ≤140-char summary for the UI's thinking bubble.
+export const MemberPhaseOutputSchema = StanceSchema.extend({
+  fullText: z.string().min(1),
+  bubble: z.string().min(1).max(140),
+});
+export type MemberPhaseOutput = z.infer<typeof MemberPhaseOutputSchema>;
