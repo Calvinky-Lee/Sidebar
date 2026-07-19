@@ -1,6 +1,6 @@
-# Jury Hopps — Design Spec
+# The Council — Design Spec
 
-*(working title; internally the system is still "the Council" — code and schema names don't churn with branding)*
+*(product and code share the name now; UI copy uses "the Chair" and "council members")*
 
 **Date:** 2026-07-18
 **Status:** Draft for team review — spec only, nothing implemented
@@ -11,9 +11,9 @@
 
 ## 1. Pitch
 
-Every consequential decision means chasing multiple people's opinions, doing background research, and writing up a recommendation. **Jury Hopps automates that entire workflow — as an animal courtroom.** Give it any real decision, and the rabbit Judge empanels the right jury: four AI jurors selected for *maximal relevant disagreement*, each a tool-using agent that researches before it argues, each an original 2D animal character whose species matches its temperament. They give opening statements, rebut each other once, and the Judge issues a verdict that preserves the split — majority ruling, named dissent, and "what would change our mind" — exported as a shareable decision brief.
+Every consequential decision means chasing multiple people's opinions, doing background research, and writing up a recommendation. **The Council automates that entire workflow — as a mind headquarters.** Give it any real decision, and the Chair convenes the right council: four AI members selected for *maximal relevant disagreement*, each a tool-using agent that researches before it argues, each an original little blob character in its own signature color. They give opening statements, rebut each other once, pitch the Chair, and the Chair issues a decision that preserves the split — ruling, devised solution plan, named dissent, and "what would change our mind" — exported as a shareable decision brief. Every finished case crystallizes into a **memory orb** that orbits overhead; a search bar recalls any past deliberation.
 
-**Theme & IP guardrail:** the name is a pun; the art is NOT. All characters are original anthropomorphic animal designs in a warm flat-2D animated-film style — no Zootopia/Disney assets, no traced character designs, no Disney names in the app. Internal system names stay theme-neutral (Chair/council in code; Judge/jury in UI copy).
+**Theme & IP guardrail:** the vibe is Inside-Out-*inspired*; the art is NOT Pixar's. All characters are original simple blob designs (rounded mascot style, pure SVG/CSS — think "little robot/creature," not any Pixar emotion's silhouette), with original names and colors chosen by us. No Pixar/Disney assets, no traced designs, no emotion-character names (Joy, Sadness, …), no "Inside Out" branding in the app. Memory orbs are rendered as generic glowing spheres. Internal system names stay theme-neutral (Chair/council in code and UI).
 
 **One-liner:** better decisions through engineered disagreement.
 
@@ -23,9 +23,17 @@ Every consequential decision means chasing multiple people's opinions, doing bac
 
 ## 2. Product definition
 
-- **Scope: general-purpose.** Any real decision — business, career, purchases, personal. The demo script should skew toward business/work decisions to land the Phoebe framing (e.g., "should our startup switch to annual billing?"), with one funny dilemma for charm.
+### Scope — what Jury Hopps is for
+
+**Consequential, arguable decisions with no single right answer** — the decisions people currently resolve by polling friends, colleagues, or their own anxiety at 2am. In scope: business calls (pricing, hiring, vendor, pivot), career moves (offers, quit-or-stay, negotiation), money (rent vs. buy, big purchases), and personal crossroads. Out of scope: questions with one checkable answer (that's a search engine), professional-advice domains requiring licensure (medical, legal, tax — intake politely declines and says why), and pure taste.
+
+### The solution it provides
+
+Getting a well-rounded read on a hard decision today means chasing several people's opinions, doing background research, and synthesizing it yourself — slow, biased toward whoever you happened to ask, and prone to echo chambers. Jury Hopps replaces that with an on-demand deliberation: a jury *cast for engineered disagreement* (not friends who agree with you), agents that *verify facts with real tools* (not vibes), positions that must *survive rebuttal and be pitched to a Judge*, and a final output that is not a summary but a **decision package** — a direct answer, a devised optimal solution plan mixing the jury's strongest elements, the preserved dissent, and the concrete conditions that would change the answer.
+
+- **Dilemma scope: general-purpose** within the above. The demo script should skew toward business/work decisions to land the Phoebe framing (e.g., "should our startup switch to annual billing?"), with one funny dilemma for charm.
 - **Input:** free-text dilemma plus optional context (constraints, background, links).
-- **Output:** a live-streamed deliberation ending in a structured verdict, persisted with a shareable replay URL and an exportable decision brief (Markdown).
+- **Output:** a live-streamed deliberation ending in a structured verdict, persisted with a replay URL and an exportable decision brief (Markdown). Finished sessions appear as **memory orbs** on the home screen and are searchable by their dilemma text.
 - **Non-goals (v1):** auth/accounts, voice, mobile-native, multi-council sessions, persona fine-tuning, more than 4 council members.
 
 ## 3. Architecture
@@ -34,28 +42,29 @@ Three deployable pieces, one shared contract. Single-language TypeScript monorep
 
 | Piece | Tech | Hosting | Purpose |
 |---|---|---|---|
-| Frontend | Next.js + Tailwind + Framer Motion | Vercel | The council chamber UI |
-| Council service | Node + Hono, SSE | Fly.io or Railway | Runs deliberations, streams events; lives outside serverless so 90s sessions never fight timeouts |
-| Database | Supabase (Postgres + pgvector) | Supabase | Persona library, session persistence, event replay |
+| Frontend | Next.js + Tailwind + Framer Motion | local (`pnpm dev`) | The Council HQ UI |
+| Council service | Node + Hono, SSE | local (`pnpm dev`) | Runs deliberations, streams events, serves replay reads; separate process so 90s streams never fight the web app |
+| Database | MongoDB Atlas (+ Atlas Vector Search) | Atlas | Persona library, session persistence, event replay. Voyage AI (our embedding provider) is MongoDB-owned — first-class pairing |
 | `packages/contract` | TypeScript + zod | shared package | Every SSE event, stance, verdict, and persona shape. **Hour-0 deliverable, co-signed by all four.** |
 
-Council members are Anthropic SDK tool-runner loops (Sonnet-tier for speed/cost) with two tools: **web search** and **calculator**. The Chair (orchestrator) uses a higher-capability model for intake and the verdict.
+Council members are Gemini function-calling/grounding loops (Flash tier for speed) with two tools: **Google Search grounding** and a **calculator**. The Chair (orchestrator) uses the Pro tier for the verdict. Exact model IDs pinned at hour 0 (spec 04).
 
 ## 4. Deliberation pipeline (the Chair)
 
-Five phases, all streamed as SSE events:
+Six phases, all streamed as SSE events and all individually visible in the UI's phase tracker (spec 07):
 
-1. **Intake** — parse the dilemma; extract the axes of tension (risk vs. reward, principle vs. pragmatism, short vs. long term).
-2. **Casting** — embed the dilemma → retrieve top-25 relevant personas from pgvector → **MMR selection** (λ≈0.6) picks 4 that are relevant *and* mutually distant. The Chair writes each a **situation brief**: same core identity, specialized to this dilemma. This satisfies "traits tailored to the situation" without giving up a persistent library.
-3. **Opening statements** — 4 council agents run in parallel. Each emits a structured stance `{recommendation, confidence, key_reasons}` plus a spoken answer in its voice. Tool calls stream to the UI ("🔍 The Actuary is searching: SaaS annual billing churn rates").
-4. **Rebuttal round** — each agent sees the other three stances and gives one rebuttal; may update its stance (updates are tracked — see KPIs).
-5. **Verdict** — the Chair rules: `{ruling, vote_split, majority_reasoning, dissent: {who, position, why_it_matters}, confidence, what_would_change_our_mind}`. Disagreement is never averaged away; the dissent is a first-class field. The verdict renders as an exportable decision brief.
+1. **Intake** — parse the dilemma; extract the axes of tension (risk vs. reward, principle vs. pragmatism, short vs. long term). UI: *"understanding the case."*
+2. **Casting** — embed the dilemma → retrieve top-25 relevant personas via Atlas Vector Search → **MMR selection** (λ≈0.6) picks 4 that are relevant *and* mutually distant. Members pop onto screen one by one as they're decided; hover/click any member for their personality card. The Chair writes each a **situation brief**: same core identity, specialized to this dilemma. This satisfies "traits tailored to the situation" without giving up a persistent library.
+3. **Opening statements** — 4 council agents run in parallel. Each emits a structured stance `{recommendation, confidence, key_reasons}` plus a spoken answer in its voice. Tool calls stream to the UI ("🔍 The Actuary is searching: SaaS annual billing churn rates"). UI: *"forming opinions."*
+4. **Rebuttal round** — each agent sees the other three stances and gives one rebuttal; may update its stance (updates are tracked — see KPIs). UI: *"deliberating — ingesting each other's opinions."*
+5. **Closing pitches** — each member addresses the Chair directly with a ≤60-word closing argument and its final, locked stance. Four small parallel calls — cheap, fast, and the beat that makes "pitching your solution to the orchestrator" visible.
+6. **Verdict** — the Chair rules: `{ruling, solution_plan, vote_split, majority_reasoning, dissent, confidence, what_would_change_our_mind}`. The **ruling** is the Chair's direct personal answer to the question; the **solution plan** is a devised optimal solution mixing the strongest elements across members — not just picking a side. Disagreement is never averaged away. The verdict renders as an exportable decision brief.
 
 **Guardrails:** 45s hard timeout per agent, max 3 tool iterations per statement. If an agent fails, deliberation proceeds with three and the Chair notes the recusal.
 
 ## 5. Persona system
 
-- **Library:** ~200 personas seeded offline by a generation script. Record: name, archetype, core values, biases, decision style, voice, domains, **species** (from the fixed art-set list, chosen to match temperament), avatar seed.
+- **Library:** ~200 personas seeded offline by a generation script. Record: name, archetype, core values, biases, decision style, voice, domains, **avatar** `{hue, form}` (from the fixed palette/shape set — the character's signature color doubles as its identity color everywhere in the UI).
 - **Embedding:** computed from the **stance profile only** (values + biases + decision style — not names or flavor text). Rationale: bio embeddings measure topical similarity, not behavioral divergence; embedding the stance profile is the closest cheap proxy for "will these two give different advice."
 - **Casting:** pgvector similarity (HNSW index) for relevance, then MMR / farthest-point selection for diversity. Relevance and diversity are in tension; MMR resolves it and makes the vector DB load-bearing rather than decorative.
 - **Diversity score:** mean pairwise embedding distance of the cast, normalized against a random-cast baseline. Shown live in the UI during casting.
@@ -65,24 +74,19 @@ Five phases, all streamed as SSE events:
 
 The single interface the whole team codes against. Events (zod-schema'd in `packages/contract`):
 
-`session_started` · `dilemma_parsed` · `casting_started` · `persona_cast` (×4, card data + running diversity score) · `statement_started` / `statement_delta` / `statement_done` (per persona, token streaming) · `tool_call` / `tool_result` (per persona) · `rebuttal_started` / `rebuttal_delta` / `rebuttal_done` · `stance_updated` · `verdict_started` / `verdict_delta` / `verdict_done` · `agent_recused` · `session_done` · `error`
+`session_started` · `dilemma_parsed` · `casting_started` · `persona_cast` (×4, card data + running diversity score) · `casting_done` (diversity ratio + 2D vector map for the sidebar graph) · `statement_started` / `statement_delta` / `statement_done` (per persona, token streaming) · `tool_call` / `tool_result` (per persona) · `rebuttal_started` / `rebuttal_delta` / `rebuttal_done` · `stance_updated` · `closing_started` / `closing_delta` / `closing_done` · `verdict_started` / `verdict_delta` / `verdict_done` · `agent_recused` · `session_done` · `error`
 
-Every event persists to the DB with a sequence number → SSE reconnect resumes from `Last-Event-ID`; finished sessions replay from the DB for share links and demo mode.
+Every event persists to the DB with a sequence number → SSE reconnect resumes from `Last-Event-ID`; finished sessions replay from the DB for share links and demo mode. Full payloads: spec 02.
 
-## 7. Data model (Supabase)
+## 7. Data model (MongoDB Atlas)
 
-- `personas(id, name, archetype, profile jsonb, stance_profile text, embedding vector)`
-- `sessions(id, dilemma, context, status, created_at)`
-- `castings(session_id, persona_id, situation_brief, mmr_score, diversity_score)`
-- `statements(session_id, persona_id, phase enum[opening,rebuttal], stance jsonb, text, tool_calls jsonb)`
-- `verdicts(session_id, verdict jsonb, brief_md text)`
-- `events(session_id, seq, type, payload jsonb)` — the replay log
+Collections: `personas` (with `embedding` + Atlas Vector Search index), `sessions`, `castings`, `statements` (phase ∈ opening/rebuttal/closing), `verdicts`, `events` (the replay log, `{session_id, seq, type, payload}`). Full shapes and indexes: spec 03. Frontend never reads Atlas directly — finished sessions are served by a read endpoint on the council service.
 
-## 8. Frontend (2D animal courtroom)
+## 8. Frontend (Council HQ)
 
-A flat-2D animated courtroom scene: the rabbit **Judge** at the bench, four **juror** seats in the jury box. Casting is *empaneling* theater: juror characters hop/walk into their seats with archetype nameplates and the diversity meter climbing. Speech bubbles stream token-by-token with simple talk animations (ear twitches, blinks — sprite states, not rigged animation); tool-use chips appear beneath a juror while its agent researches ("🔍 the Owl is searching…"). Rebuttals visually quote the target juror's words. Verdict is the theater beat: gavel slam, vote-split bar, dissenting juror spotlighted, "what would change our mind," then the decision-brief export button. Intake is framed as *filing a case*. Shareable replay pages. Built against **recorded event streams** from day one so frontend never blocks on backend.
+A flat-2D **mind-headquarters** scene: the **Chair** on a center-back platform, four council-member **blob characters** at a console arc, and a field of **memory orbs** (past cases) orbiting above, with a **search bar over past conversations** at the top. A **phase tracker** makes each stage of thinking legible: understanding the case → convening the council → forming opinions → deliberating (ingesting each other's views) → pitches to the Chair → decision. Convening is theater: members pop onto screen one by one as they're decided, and **hovering or clicking any member opens their personality card** (archetype, values, biases, decision style, situation brief). Speech bubbles stream token-by-token with simple state animations; tool-use chips appear beneath a member while its agent researches. Rebuttals visually quote the target member's words. Pitches turn each member toward the Chair. The decision is the theater beat: vote-split bar in member hues, the Chair's answer + step-by-step solution plan, dissenting member spotlighted, "what would change our mind," decision-brief export — then the **crystallization**: the case condenses into a new memory orb that floats up to join the field. A **sidebar toggle opens the vector graph**: each member's personality embedding projected to 2D in its signature hue, visually showing how far apart the cast personalities sit — hover a vector for that personality's summary. Built against **recorded event streams** from day one so frontend never blocks on backend.
 
-**Character art:** original animal designs only (§1 IP guardrail). Each persona archetype maps to a species whose folk temperament matches its decision style (owl = analyst, fox = cynic, tortoise = traditionalist, retriever = optimist, etc.). The species mapping lives in the persona record (P2) so casting emits it; art assets are a fixed set of ~10–15 species with 2–3 sprite states each (idle, talking, dissent), sourced by generating original character art offline (image-gen with a consistent style prompt) or commissioning/drawing — decided by P3 in hour 1, documented here.
+**Character art:** original blob characters only (§1 IP guardrail) — pure SVG/CSS (12 hues × ~4 forms, states: idle/talking/dissent), no image assets, no art pipeline. A member's hue is its identity color everywhere: body, nameplate, bubbles, vector graph, and its share of a memory orb. Full detail: spec 07.
 
 ## 9. KPIs & evaluation
 
@@ -144,7 +148,7 @@ Two halves — is the *deliberation* real, and is the *output* useful — plus o
 1. Persona schema: identity fields vs. stance-profile fields (only the latter embedded)
 2. Library generation script (~200 general-purpose personas across decision domains) + quality rubric
 3. Embedding strategy: stance-profile canonical text; default Voyage `voyage-3` (P2 may swap with a one-line rationale in this doc)
-4. pgvector table + HNSW index + similarity queries
+4. Atlas Vector Search index + similarity queries; 2D PCA projection for the sidebar vector graph
 5. MMR casting (λ≈0.6) with deterministic tests on fixed embeddings
 6. Council diversity score + random-baseline normalization
 7. Casting API surface consumed by P1
@@ -153,20 +157,22 @@ Two halves — is the *deliberation* real, and is the *output* useful — plus o
 ### P3 — Frontend
 1. SSE client with reconnect/replay + state store
 2. Recorded-stream dev harness from day one (fixtures from P4)
-3. Chamber layout: four-card arc + Chair
-4. Casting theater: card flip-ins, diversity meter
+3. HQ layout + phase tracker (six visible phases); SVG blob character system
+4. Convening theater: members pop in as cast, diversity meter; hover/click personality cards
 5. Streaming speech bubbles + live tool-use chips
-6. Rebuttal visualization with quoted snippets
-7. Verdict theater: gavel, vote-split bar, dissent spotlight, decision-brief export
-8. Intake form + shareable replay pages
+6. Rebuttal visualization with quoted snippets; pitch-to-the-Chair beat
+7. Decision theater: vote-split bar, solution plan, dissent spotlight, brief export, orb crystallization
+8. Memory-orb field + past-conversation search bar
+9. Vector-graph sidebar (2D personality embeddings, hover summaries)
+10. Intake form + replay pages
 
 ### P4 — Platform & Runtime
 1. **Hour-0:** monorepo + `packages/contract` zod schemas — all four sign off
 2. Council service (Hono): `POST /sessions`, `GET /sessions/:id/stream`
 3. Event persistence + resume-from-last-event-id
 4. Tool implementations: web search + calculator, typed result schemas
-5. Supabase schema/migrations (§7)
-6. Deploys (Vercel + Fly/Railway), secrets, CORS
+5. MongoDB Atlas collections, indexes, and the session read endpoint (§7)
+6. Local run scripts (`pnpm dev` / `pnpm demo` / `pnpm seed`), env loading, CORS
 7. Demo mode: golden-session recorder + offline replay switch
 8. Metrics capture + logging for the KPI dashboard (§9); rate/cost caps
 

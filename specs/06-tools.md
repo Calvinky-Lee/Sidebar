@@ -1,17 +1,17 @@
-# 06 — Tools — P4
+# 06 — Tools
 
-Two tools, available to jurors only during **opening statements** (max 3 iterations; rebuttals are tool-free per spec 04). Every call emits `tool_call` / `tool_result` events — tool use on screen is the "agents coordinate the real world" pitch moment, so results are never silent.
+Two tools, available to council members only during **opening statements** (max 3 iterations; rebuttals and closings are tool-free per spec 04). Every use emits `tool_call` / `tool_result` events — tool use on screen is the "agents coordinate the real world" pitch moment, so results are never silent.
 
-## 1. Web search
+## 1. Web search — **Gemini Google Search grounding**
 
-- **Primary: Anthropic's server-side `web_search` tool** — passed in the juror call's `tools` array; Anthropic executes the search server-side. Zero extra API key, zero scraping code, citations come back structured. Billed per search on the Anthropic key (§ cost note below).
-- **Fallback: Tavily** (`TAVILY_API_KEY`), as a client-side tool in the tool-runner loop, only if the account/model combination doesn't support the server tool — verify at hour 0, record the outcome here.
-- Config: `max_uses: 3` per juror per session.
-- **Event mapping:** the server tool's search begins/results are translated by the juror-runner into contract `tool_call` (`input: query`) and `tool_result` (`summary`: top result titles, ≤140 chars) events, keyed by `callId`.
+- Built into the Gemini API: pass the `google_search` tool in the member call's config; Google executes the search server-side and the response comes back grounded with `groundingMetadata` (queries used + source URIs). Zero extra API key, zero scraping code.
+- **Event mapping:** the member-runner translates `groundingMetadata` into contract events — `tool_call` (`input`: the search queries Gemini issued) and `tool_result` (`summary`: top source titles, ≤140 chars) — keyed by `callId`. Emitted when the grounded response lands (grounding is not step-streamed; acceptable — the chip appears with the statement).
+- Note: grounding + `responseSchema` cannot always be combined in one call — the member runner does the grounded prose call first, then a tiny schema-forced call to extract the `Stance`. Verify the interaction at hour 0 and record the outcome here.
+- Fallback (if grounding is unavailable on the team's tier): Tavily (`TAVILY_API_KEY`) as a declared function tool.
 
-## 2. Calculator
+## 2. Calculator — Gemini function calling
 
-- Client-side tool in the tool-runner loop; evaluated with **mathjs** `evaluate()` in restricted scope (no assignment, no function definition — parse-tree check before eval). Never `eval()`.
+- Declared as a function tool; evaluated service-side with **mathjs** `evaluate()` in restricted scope (no assignment, no function definition — parse-tree check before eval). Never `eval()`.
 - Schema:
 
 ```ts
@@ -24,6 +24,6 @@ output: { result: string } | { error: string }  // errors return to the model, n
 ## Shared tool rules
 
 1. **Typed results:** every tool result parses through a contract schema before reaching the model or the event stream.
-2. **Timeouts are per-call** (search: 10s; calc: 1s) and *inside* the juror's 45s budget — a slow tool degrades one statement, never the session.
+2. **Timeouts are per-call** (grounded call: 15s; calc: 1s) and *inside* the member's 45s budget — a slow tool degrades one statement, never the session.
 3. **Failure shape:** a failed tool call returns `{ error }` to the model (which is told to proceed without it) and emits a `tool_result` with an error summary — the chip shows the attempt; honesty is part of the theater.
-4. **Cost note:** Anthropic web search bills per search (verify current pricing at hour 0 — see spec 09 budget table). Worst case 4 jurors × 3 searches = 12 searches/session; the $0.50 cap accounts for it.
+4. **Cost:** Google Search grounding is included in the Gemini API (free-tier limits apply; verify current quota at hour 0 — see spec 09).

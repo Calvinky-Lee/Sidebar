@@ -2,13 +2,13 @@
 
 ## Library generation (offline, `seed/generate-personas.ts`)
 
-- ~200 personas via LLM generation (Sonnet), batched by decision domain: business, career, money, personal, ethics, creative — plus deliberate generalists.
+- ~200 personas via LLM generation (Gemini Flash tier), batched by decision domain: business, career, money, personal, ethics, creative — plus deliberate generalists.
 - **Quality rubric (enforced by a validation pass, regenerate failures):**
   1. Distinct decision style in one sentence
   2. ≥1 explicit bias (a real flaw, not a humblebrag)
   3. Voice survives one sentence of reading
-  4. `species` from the fixed art set (spec 07), chosen by folk temperament (owl=analyst, fox=cynic, tortoise=traditionalist, retriever=optimist…) — set balanced so no species exceeds ~10% of the library
-  5. Original names only — automated check against a Disney/Zootopia name blocklist
+  4. `avatar {hue, form}` from the fixed 12-color palette + SVG form set (spec 07), assigned by temperament (warm/impulsive hues vs. cool/analytical, spiky vs. round forms) — balanced so no hue exceeds ~10% of the library
+  5. Original names only — automated check against a Pixar/Disney character-name blocklist
 - Output: `seed/personas.json`, human-reviewed before loading. This is seed *data*; regeneration is cheap and non-sacred.
 
 ## Embedding pipeline (`seed/embed-personas.ts`)
@@ -23,19 +23,19 @@ Domains: {domains, comma-joined}
 ```
 
 - Model: **Voyage `voyage-3`**, 1024 dims, `input_type: 'document'` for personas, `'query'` for dilemmas. Swappable behind one function (`embed(text, kind)`); swapping requires re-seeding and a rationale line here.
-- One batch call at seed time → `personas.embedding` via `seed/load-supabase.ts`.
+- One batch call at seed time → `personas.embedding` via `seed/load-mongo.ts` (Atlas Vector Search index per spec 03; Voyage being MongoDB-owned makes this pairing first-class).
 - **Baseline precompute:** sample 1,000 random 4-persona casts; store mean pairwise cosine distance as `DIVERSITY_BASELINE` (a constant checked into `casting/diversity.ts` with the seed batch id). The UI ratio = cast diversity / baseline.
 
 ## Casting at query time (`casting/`)
 
 ```
 dilemma ──intake(P1)──▶ parsed text ──embed('query')──▶ vector
-   ──pgvector top-25 (cosine, HNSW)──▶ pool
-   ──MMR select 4──▶ cast ──diversity score──▶ persona_cast events
+   ──Atlas $vectorSearch top-25 (cosine)──▶ pool
+   ──MMR select 4──▶ cast ──diversity score + 2D projection──▶ persona_cast / casting_done events
 ```
 
 ### `retrieve.ts`
-Top-K=25 by cosine similarity. Embeds the *parsed* dilemma (summary + axes of tension), not raw user text — the axes are what jurors must be relevant to.
+Top-K=25 via the `$vectorSearch` aggregation stage (`numCandidates: 100, limit: 25`, cosine). Embeds the *parsed* dilemma (summary + axes of tension), not raw user text — the axes are what members must be relevant to.
 
 ### `mmr.ts` — pure function, deterministic, unit-tested with synthetic embeddings
 ```
@@ -48,6 +48,9 @@ Required unit tests (no model calls): identical-pool ⇒ deterministic output; a
 ### `diversity.ts`
 `diversityScore = mean pairwise cosine distance of the 4 selected`; `baselineRatio = diversityScore / DIVERSITY_BASELINE`. Target ≥1.3 on every benchmark dilemma.
 
+### `project.ts` — 2D projection for the sidebar vector graph
+PCA over the **top-25 retrieval pool** (not just the 4 — the pool defines the local axes of variation for this dilemma), fitted per session, then the 4 cast embeddings are projected and normalized to `[-1, 1]²` → `VectorPoint[]` in the `casting_done` payload. Plain TS (power iteration on the 25×25 covariance is enough at this size — no math dependency beyond what mathjs already provides). Deterministic given the pool ⇒ unit-testable with synthetic embeddings. Purpose: the graph makes "these four personalities are far apart" *visible*; hovering a vector shows the personality summary (spec 07).
+
 ## API provided to P1
 
 ```ts
@@ -55,6 +58,7 @@ castCouncil(parsedDilemma: string): Promise<{
   members: CastMember[]        // 4, seats 0–3, WITHOUT situationBrief (P1 writes those)
   diversityScore: number
   baselineRatio: number
+  vectorMap: VectorPoint[]     // 2D PCA coords per cast member (contract)
 }>
 ```
 

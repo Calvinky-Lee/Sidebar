@@ -1,69 +1,50 @@
-# 09 — Infra, Environments & API Keys — P4
+# 09 — Infra, Environments & API Keys — platform owner
+
+**Local-first (spec 01):** both apps run on the demo laptop via `pnpm dev`. The only cloud dependencies are MongoDB Atlas and the model/embedding APIs. No web hosting, no deploy platforms.
 
 ## Accounts needed (one per team, created before hour 0)
 
 | Account | For | Free tier OK? |
 |---|---|---|
-| Anthropic Console | Chair + jurors + LLM judge + web search tool | needs credits (~$25 covers build + eval + demo) |
-| Voyage AI | `voyage-3` embeddings | yes — seed is one batch; queries are tiny |
-| Supabase | Postgres + pgvector + RLS | yes |
-| Vercel | `apps/web` | yes |
-| Fly.io (fallback Railway) | `apps/council-service` | yes/near-free |
-| Tavily *(only if fallback triggers, spec 06)* | web search fallback | yes |
+| Google AI Studio | Gemini API — Chair, members, LLM judge, Google Search grounding | yes — generous free tier; rate limits (RPM/TPM) are the real constraint, verify at hour 0 |
+| Voyage AI | `voyage-3` embeddings (MongoDB-owned — natural pairing with Atlas) | yes — seed is one batch; queries are tiny |
+| MongoDB Atlas | documents + Atlas Vector Search | yes — M0 free tier supports vector search |
+| Tavily *(only if grounding fallback triggers, spec 06)* | web search fallback | yes |
 
 ## API keys & env vars — the complete list (`.env.example` mirrors this)
 
-### `apps/council-service` (Fly.io secrets)
+One local `.env` at the repo root, loaded by both apps. Gitignored from commit 1; `.env.example` carries names + comments, never values.
 
-| Var | What | Source |
+| Var | Used by | What |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | all model calls + server-side web search | Anthropic Console |
-| `VOYAGE_API_KEY` | dilemma embeddings at query time | Voyage dashboard |
-| `SUPABASE_URL` | project URL | Supabase settings |
-| `SUPABASE_SERVICE_ROLE_KEY` | full DB read/write — **never** leaves the service | Supabase settings |
-| `COUNCIL_SERVICE_TOKEN` | self-issued bearer token (random 32 bytes); frontend proxy must present it | generated once, shared to Vercel |
-| `TAVILY_API_KEY` *(optional)* | search fallback only | Tavily |
-| `COST_CAP_USD` (=0.50) | per-session kill-switch | config |
-| `DEMO_MODE` (=0/1) | serve golden fixture instead of live deliberation | config |
+| `GEMINI_API_KEY` | council-service, seed, eval | all model calls + Google Search grounding (AI Studio) |
+| `VOYAGE_API_KEY` | council-service, seed | voyage-3 embeddings (seed batch + per-session dilemma query) |
+| `MONGODB_URI` | council-service, seed | Atlas SRV connection string — never imported by `apps/web` |
+| `COUNCIL_SERVICE_URL` | web | proxy route target, `http://localhost:8787` |
+| `COUNCIL_SERVICE_TOKEN` | both (optional) | bearer auth, **off by default locally**; middleware exists so hosting later is one env var |
+| `TAVILY_API_KEY` | council-service (optional) | only if Google Search grounding is unavailable on the team's tier |
+| `COST_CAP_USD` (=0.50) | council-service | per-session kill-switch (matters only on a paid key) |
+| `DEMO_MODE` (=0/1) | council-service | 1 = stream the golden fixture instead of a live deliberation |
 
-### `apps/web` (Vercel)
+**Key-safety rules:** the browser receives zero credentials — all reads and streams go through the Next.js proxy to the council service. `MONGODB_URI` and `GEMINI_API_KEY` are imported only in `apps/council-service` and `seed`/`eval` scripts (enforce with a lint rule or grep in CI-of-one). Atlas network access: allow-list team laptops (or 0.0.0.0/0 with a strong password for hackathon speed — note it and rotate after). **Any credential ever pasted into a chat, screenshot, or shared doc is burned — rotate it after the event.**
 
-| Var | What | Exposure |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | replay-page reads | public |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | read-only under RLS (spec 03) | public — safe by design |
-| `COUNCIL_SERVICE_URL` | service base URL | server-only (proxy route) |
-| `COUNCIL_SERVICE_TOKEN` | bearer for the proxy | server-only — **no `NEXT_PUBLIC_` prefix, ever** |
+## Running it
 
-### `seed/` + `eval/` (developer laptops only)
-
-`ANTHROPIC_API_KEY` (persona generation, eval judge), `VOYAGE_API_KEY` (seed embeddings), `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (loading). Local `.env`, gitignored.
-
-**Key-safety rules:** service-role key and service token exist in exactly two places (Fly secrets, Vercel server env). Browser receives only the two `NEXT_PUBLIC_` Supabase values. `.env` in `.gitignore` from commit 1; `.env.example` carries names + comments, never values.
-
-## Deploys
-
-- **Vercel:** auto-deploy `apps/web` on push to `main` (monorepo root directory setting). Preview deploys per PR for free frontend review.
-- **Fly.io:** `fly deploy` from `apps/council-service` (fly.toml checked in). Single `shared-cpu-1x` instance; SSE = plain HTTP streaming, no special config; `min_machines_running = 1` to dodge cold starts during demo hours.
-- **Supabase:** migrations applied via CLI (`supabase db push`) by P4 only.
-- **CORS:** council service allows only the Vercel prod + preview origins; bearer token required on every route.
+- `pnpm dev` — starts `apps/web` (:3000) and `apps/council-service` (:8787) concurrently with hot reload.
+- `pnpm demo` — same, with `DEMO_MODE=1` (golden fixture, wifi-proof).
+- `pnpm seed` — generate → embed → load personas + create indexes (one-time, needs all three keys).
+- `pnpm eval` — the spec-08 benchmark harness.
+- CORS: council service allows `localhost:3000` only.
 
 ## Demo hardening
 
-1. **Demo mode:** `DEMO_MODE=1` (or per-session `?demo=1`) streams `fixtures/golden-session.jsonl` through the real SSE path with realistic pacing — the app is indistinguishable from live, with wifi only needed for the initial page load (and `/dev/replay` works fully offline as the last resort). Rehearse the pitch through it at least once.
-2. **Golden-session recorder:** any live session can be flagged and dumped from the `events` table to a fixture file (one SQL query + jq — spec'd, trivial).
-3. **Cost caps:** running token+search cost tracked per session; breach ⇒ clean fatal `error` event, session `failed`, never a hung UI.
-4. **Rate limit:** 3 concurrent sessions max (hackathon floor traffic + judges); excess returns 429 with a friendly "court is in session" page.
+1. **Demo mode:** `DEMO_MODE=1` (or per-session `?demo=1`) streams `fixtures/golden-session.jsonl` through the real SSE path with realistic pacing — indistinguishable from live, zero network needed. Rehearse the pitch through it at least once.
+2. **Golden-session recorder:** any live session can be flagged and dumped from the `events` collection to a fixture file (one script — spec'd, trivial).
+3. **Offline DB fallback:** Atlas CLI local deployment (`atlas deployments setup`) supports vector search on-laptop if venue wifi can't reach Atlas.
+4. **Rate-limit resilience:** Gemini free-tier 429s ⇒ orchestrator backs off and serializes member calls; the UI just sees slower phases, never errors.
+5. **Cost cap:** running token cost tracked per session on paid keys; breach ⇒ clean fatal `error` event, never a hung UI.
+6. **Concurrency cap:** 3 concurrent sessions max; excess returns 429 with a friendly "the council is in session" page.
 
-## Budget sanity (per session, worst case)
+## Budget sanity (per session)
 
-| Item | Est. |
-|---|---|
-| 4 jurors × (statement + rebuttal), Sonnet | ~$0.15 |
-| Intake + 4 briefs, Sonnet | ~$0.03 |
-| Verdict, Opus | ~$0.10 |
-| Web searches (≤12) | ~$0.12 |
-| Voyage query embedding | <$0.001 |
-| **Total** | **~$0.40** → cap $0.50 ✓ |
-
-(Verify current per-search and per-token pricing at hour 0; adjust the table, not the cap.)
+On the AI Studio **free tier: $0** — the constraint is requests/minute, not dollars (4 members × 3 phases + Chair calls ≈ 15–20 requests/session; fits free-tier RPM with the orchestrator's backoff). On a paid key: Flash-tier tokens + one Pro-tier verdict ≈ **well under $0.10/session**; grounded search is included with the API (quota applies). Voyage query embedding <$0.001. The $0.50 cap is now deep margin rather than a real ceiling — keep it as the kill-switch anyway.

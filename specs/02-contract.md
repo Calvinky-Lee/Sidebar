@@ -8,11 +8,13 @@ Zod schemas in TypeScript; every boundary (SSE, DB payloads, tool results) parse
 // persona.ts
 PersonaIdentity {
   id: string            // uuid
-  name: string          // original character name — never a Disney name
+  name: string          // original character name — never a Pixar/Disney name
   archetype: string     // "The Actuary", "The Gambler", …
-  species: Species      // enum from the fixed art set (spec 07), e.g. 'owl' | 'fox' | 'tortoise' | …
+  avatar: {             // original blob-character look (spec 07): signature color + simple form
+    hue: string         //   from the fixed 12-color palette; doubles as the member's identity color everywhere
+    form: BlobForm      //   'round' | 'tall' | 'squat' | 'spiky' | … (fixed SVG shape set)
+  }
   voice: string         // 1-sentence speech-style direction
-  avatarSeed: string
   domains: string[]     // e.g. ["finance", "career"]
 }
 
@@ -42,7 +44,9 @@ Stance {
 ```ts
 // verdict.ts
 Verdict {
-  ruling: string                    // the Judge's recommendation, 1–3 sentences
+  ruling: string                    // the Chair's direct, personal answer to the user's question, 1–3 sentences
+  solutionPlan: string[]            // 3–6 concrete steps — the Chair's devised OPTIMAL SOLUTION,
+                                    // mixing the strongest elements across members, not just picking a side
   voteSplit: { for: string[], against: string[], abstain: string[] }  // persona ids
   majorityReasoning: string
   dissent: {                        // REQUIRED when voteSplit is not unanimous
@@ -57,7 +61,7 @@ Verdict {
 
 ```ts
 // phases.ts
-Phase = 'intake' | 'casting' | 'statements' | 'rebuttal' | 'verdict'
+Phase = 'intake' | 'casting' | 'statements' | 'rebuttal' | 'closing' | 'verdict'
 SessionStatus = 'created' | Phase | 'done' | 'failed'
 ```
 
@@ -76,27 +80,41 @@ Event<T> { seq: number, sessionId: string, ts: string, type: string, payload: T 
 | `session_started` | `{ dilemma, context? }` | |
 | `dilemma_parsed` | `{ summary, axesOfTension: string[] }` | from intake |
 | `casting_started` | `{ poolSize }` | |
-| `persona_cast` | `{ member: CastMember, seat: 0-3, runningDiversityScore }` | ×4; UI empanels on each |
-| `casting_done` | `{ diversityScore, baselineRatio }` | ratio is the ≥1.3× KPI number |
+| `persona_cast` | `{ member: CastMember, seat: 0-3, runningDiversityScore, initialRead: string }` | ×4; `initialRead` = ≤140-char first take on the problem (distilled from the situation brief) → the member's first thinking bubble |
+| `casting_done` | `{ diversityScore, baselineRatio, vectorMap: VectorPoint[] }` | ratio is the ≥1.3× KPI number; vectorMap feeds the sidebar graph |
 | `statement_started` | `{ personaId, phase: 'opening' }` | |
 | `statement_delta` | `{ personaId, text }` | token/chunk streaming |
-| `statement_done` | `{ personaId, stance: Stance, fullText }` | |
+| `statement_done` | `{ personaId, stance: Stance, fullText, bubble: string }` | `bubble` = model-written ≤140-char summary for the thinking bubble |
 | `tool_call` | `{ personaId, tool: 'web_search'\|'calculator', input, callId }` | renders as chip |
 | `tool_result` | `{ personaId, callId, summary }` | summary ≤140 chars for the chip |
 | `rebuttal_started` | `{ personaId }` | |
 | `rebuttal_delta` | `{ personaId, text }` | |
-| `rebuttal_done` | `{ personaId, quotedPersonaId?, fullText }` | quoted target drives the quote highlight |
-| `stance_updated` | `{ personaId, from: Stance, to: Stance }` | the "juror changed their mind" beat |
+| `rebuttal_done` | `{ personaId, quotedPersonaId?, fullText, bubble: string }` | `bubble` = ≤140-char read of the others' positions; quoted target drives the quote highlight |
+| `stance_updated` | `{ personaId, from: Stance, to: Stance }` | the "member changed their mind" beat |
+| `closing_started` | `{ personaId }` | member turns to address the Chair |
+| `closing_delta` | `{ personaId, text }` | |
+| `closing_done` | `{ personaId, finalStance: Stance, fullText, bubble: string }` | `bubble` = ≤140-char pitch summary shown facing the Chair; stance LOCKED |
 | `verdict_started` | `{}` | gavel raise |
 | `verdict_delta` | `{ text }` | |
 | `verdict_done` | `{ verdict: Verdict, briefMd: string }` | briefMd = exportable decision brief |
 | `agent_recused` | `{ personaId, reason: 'timeout'\|'error' }` | empty-seat state |
-| `session_done` | `{ status: 'done', metrics: OpsMetrics }` | |
+| `session_done` | `{ status: 'done', metrics: OpsMetrics }` | UI: session crystallizes into a memory orb |
 | `error` | `{ message, fatal: boolean }` | fatal ⇒ session `failed` |
 
 ```ts
 OpsMetrics { firstCastMs, firstTokenMs, verdictMs, totalCostUsd, recusals: number }
+
+VectorPoint {              // 2D projection of a member's stance-profile embedding (spec 05 §Projection)
+  personaId: string
+  x: number, y: number     // PCA coords normalized to [-1, 1]
+  seat: 0|1|2|3            // color assignment is by seat (spec 07)
+}
 ```
+
+## REST endpoints (also contract-typed)
+
+- `GET /sessions?q=<text>&limit=25` → `{ sessions: [{ id, dilemma, createdAt, status, orb: { hues: string[4], voteSplit } }] }` — powers the memory-orb field and the past-conversation search bar (text search on dilemma, spec 03).
+- `GET /sessions/:id` (metadata) and `GET /sessions/:id/events` (replay log) — spec 03 §Access policy.
 
 ## Guarantees
 

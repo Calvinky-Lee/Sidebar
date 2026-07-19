@@ -2,20 +2,21 @@
 
 ## Deployment topology
 
+**Local-first: no web hosting in v1.** Both apps run on the demo laptop via `pnpm dev`; the only cloud pieces are MongoDB Atlas and the model/embedding APIs.
+
 ```mermaid
 flowchart LR
-    U[Browser] -->|HTTPS| W[apps/web · Next.js · Vercel]
-    W -->|proxy w/ bearer token| CS[apps/council-service · Hono · Fly.io]
-    CS -->|Anthropic API| A[Claude — Chair + 4 jurors]
+    U[Browser] -->|localhost:3000| W[apps/web · Next.js · local]
+    W -->|proxy| CS[apps/council-service · Hono · localhost:8787]
+    CS -->|Gemini API| A[Gemini — Chair + 4 members + search grounding]
     CS -->|Voyage API| V[voyage-3 embeddings]
-    CS -->|service role| SB[(Supabase · Postgres + pgvector)]
-    W -->|anon key, read-only| SB
+    CS -->|MONGODB_URI| M[(MongoDB Atlas + Vector Search)]
 ```
 
-- **`apps/web`** (Vercel): intake, live courtroom, replay pages. Never holds the service bearer token in the browser — all council-service calls go through a Next.js route handler proxy.
-- **`apps/council-service`** (Fly.io, fallback Railway — whichever deploys faster on day one, documented here): runs deliberations. Lives outside serverless because sessions stream for 60–90s. Single small instance is enough; sessions are independent.
-- **Supabase**: persona library (pgvector), session persistence, event replay log. Frontend reads *finished* sessions directly with the anon key + RLS read-only policies; all writes go through the service role key held only by the council service.
-- **Model calls**: Anthropic SDK from the council service only. No model calls from the frontend.
+- **`apps/web`** (local Next.js): intake, live courtroom, replay pages. ALL data (live SSE and finished-session reads) flows through Next.js route handler proxies to the council service — one code path, and the app is host-ready if it's ever deployed later.
+- **`apps/council-service`** (local Hono on :8787): runs deliberations, streams SSE, and serves the read endpoints for finished sessions (`GET /sessions/:id`, `GET /sessions/:id/events`). A separate process (not Next API routes) so a 60–90s streaming session never fights the web app, and the service is deployable unchanged later.
+- **MongoDB Atlas** (free M0, cloud): persona library (Atlas Vector Search), session persistence, event replay log. Only the council service holds `MONGODB_URI`; the frontend never reads the DB directly (spec 03 §Access policy). Offline fallback: Atlas CLI local deployment supports vector search on-laptop.
+- **Model calls**: Gemini (`@google/genai`) from the council service only. No model calls from the frontend.
 
 ## Monorepo layout (pnpm workspace)
 
@@ -27,51 +28,53 @@ jury/
 ├── apps/
 │   ├── web/                      # P3 — Next.js 15, Tailwind, Framer Motion
 │   │   ├── app/
-│   │   │   ├── page.tsx          # intake ("file your case")
-│   │   │   ├── session/[id]/     # live courtroom (SSE)
-│   │   │   ├── replay/[id]/      # finished-session replay (reads Supabase)
-│   │   │   ├── dev/replay/       # fixture replay harness (P3 task 3)
-│   │   │   └── api/sessions/     # proxy routes → council-service (holds token)
+│   │   │   ├── page.tsx          # home: orb field + search + intake ("file your case")
+│   │   │   ├── session/[id]/     # live HQ (SSE)
+│   │   │   ├── replay/[id]/      # finished-session replay (via read-endpoint proxy)
+│   │   │   ├── dev/replay/       # fixture replay harness (frontend task 3)
+│   │   │   └── api/sessions/     # proxy routes → council-service
 │   │   ├── components/
-│   │   │   ├── courtroom/        # Bench, JuryBox, JurorSeat, SpeechBubble, ToolChip
-│   │   │   ├── verdict/          # Gavel, VoteSplit, DissentSpotlight, BriefExport
+│   │   │   ├── hq/               # Chair, ConsoleSeat, Blob (SVG character), SpeechBubble,
+│   │   │   │                     #   ToolChip, PhaseTracker, PersonaCard, OrbField, SearchBar
+│   │   │   ├── verdict/          # VoteSplit, SolutionPlan, DissentSpotlight, BriefExport, Crystallize
+│   │   │   ├── sidebar/          # VectorGraph (2D personality embeddings, hover summaries)
 │   │   │   └── intake/
-│   │   ├── lib/
-│   │   │   ├── sse-client.ts     # reconnect + Last-Event-ID resume
-│   │   │   └── session-store.ts  # single reducer: contract events → courtroom state
-│   │   └── public/characters/    # sprite assets: <species>/<state>.png
+│   │   └── lib/
+│   │       ├── sse-client.ts     # reconnect + Last-Event-ID resume
+│   │       ├── session-store.ts  # single reducer: contract events → HQ state
+│   │       └── blobs.ts          # 12-hue palette + SVG form set (characters are code, not assets)
 │   └── council-service/          # P4 scaffold, P1 chair, P2 casting
 │       ├── src/
-│       │   ├── index.ts          # Hono app: POST /sessions, GET /sessions/:id/stream
+│       │   ├── index.ts          # Hono app: POST /sessions, GET /sessions/:id/stream,
+│       │   │                     #   GET /sessions/:id, GET /sessions/:id/events (replay reads)
 │       │   ├── auth.ts           # bearer token check
 │       │   ├── chair/            # P1
 │       │   │   ├── state-machine.ts
 │       │   │   ├── orchestrator.ts
 │       │   │   └── prompts/      # intake.ts, brief.ts, statement.ts, rebuttal.ts, verdict.ts
 │       │   ├── casting/          # P2
-│       │   │   ├── retrieve.ts   # pgvector top-K
+│       │   │   ├── retrieve.ts   # Atlas $vectorSearch top-K
 │       │   │   ├── mmr.ts        # pure function, unit-tested
-│       │   │   └── diversity.ts  # score + baseline
+│       │   │   ├── diversity.ts  # score + baseline
+│       │   │   └── project.ts    # 2D PCA → VectorPoint[] for the sidebar graph
 │       │   ├── tools/            # P4 — web-search.ts, calculator.ts (spec 06)
 │       │   ├── events/           # emitter.ts, persist.ts, replay.ts
-│       │   └── db/               # supabase client + typed queries
-│       ├── test/
-│       └── fly.toml
+│       │   └── db/               # mongo client + typed collection helpers
+│       └── test/
 ├── packages/
 │   └── contract/                 # P4 pen, all sign — THE hour-0 deliverable
 │       └── src/                  # events.ts, stance.ts, verdict.ts, persona.ts, phases.ts (zod)
 ├── seed/                         # P2 — offline, one-time
 │   ├── generate-personas.ts      # LLM generation w/ quality rubric
 │   ├── embed-personas.ts         # voyage-3 batch
-│   └── load-supabase.ts
+│   ├── load-mongo.ts             # insert personas into Atlas
+│   └── setup-indexes.ts          # idempotent: vector search + standard indexes (P4)
 ├── fixtures/
 │   └── golden-session.jsonl      # recorded event streams (P3 dev + demo mode)
 ├── eval/                         # P1 — spec 08
 │   ├── benchmark-dilemmas.json   # fixed 20-dilemma set
 │   ├── run-eval.ts
 │   └── rubrics/
-├── supabase/
-│   └── migrations/               # P4 applies, P2 co-designs personas table
 ├── specs/                        # these documents
 └── tasks/                        # per-person breakdowns
 ```

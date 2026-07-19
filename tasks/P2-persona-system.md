@@ -6,21 +6,22 @@
 
 ## What you provide / what you consume
 
-- **Provide:** the casting API P1 calls — `castCouncil(dilemma text) → { personas: [4 × {identity, stance_profile, mmr_score}], diversity_score }`.
-- **Consume:** P4's Supabase instance and migrations workflow; the persona schema slot in `packages/contract`.
+- **Provide:** the casting API P1 calls — `castCouncil(dilemma text) → { members: [4 × {identity, stance_profile, mmr_score}], diversity_score, baseline_ratio, vector_map }`.
+- **Consume:** P4's MongoDB Atlas cluster and index-setup workflow; the persona schema slot in `packages/contract`.
 - **Contract ownership:** persona schema (identity fields vs. stance-profile fields) and the `persona_cast` event payload.
 
 ## Ordered tasks
 
 1. **Hour 0 — co-sign the event contract.** Your stake: persona record shape and `persona_cast` payload (card data + running diversity score).
-2. **Persona schema.** Split identity (name, archetype, voice, **species**, avatar seed, domains) from **stance profile** (core values, biases, decision style). Only the stance profile is embedded — bio embeddings measure vibes, not behavior. Document this rationale in the schema file. Species comes from P3's fixed art-set list (~10–15 animals) and is assigned by temperament match (owl = analyst, fox = cynic, tortoise = traditionalist…) — coordinate the list with P3 at hour 1 so library generation can assign it.
+2. **Persona schema.** Split identity (name, archetype, voice, **avatar `{hue, form}`**, domains) from **stance profile** (core values, biases, decision style). Only the stance profile is embedded — bio embeddings measure vibes, not behavior. Document this rationale in the schema file. Avatar comes from the frontend's fixed set (12 hues × ~4 SVG forms, spec 07), assigned by temperament (warm/impulsive vs. cool/analytical hues; spiky vs. round forms) — coordinate the palette with the frontend owner at hour 1 so library generation can assign it. Original names only (Pixar/Disney blocklist check).
 3. **Library generation script (spec + prompts).** ~200 general-purpose personas spanning decision domains (business, career, money, personal, ethics). Includes a quality rubric: distinct decision style, at least one explicit bias, a voice that survives one sentence of reading. Generation is offline/one-time; output is seed data, reviewed before loading.
-4. **Embedding pipeline.** Canonical stance-profile text → Voyage `voyage-3` (swappable with a one-line rationale added to the spec). Store in `personas.embedding`.
-5. **pgvector setup.** Table per §7, HNSW index, top-K similarity query (K=25).
+4. **Embedding pipeline.** Canonical stance-profile text → Voyage `voyage-3` (MongoDB-owned; swappable with a one-line rationale added to the spec). Store in `personas.embedding` via `seed/load-mongo.ts`.
+5. **Atlas Vector Search setup.** Collection per spec 03, vector search index (cosine, 1024 dims), `$vectorSearch` top-K query (K=25, `numCandidates: 100`).
 6. **MMR casting.** `score = λ·sim(dilemma, persona) − (1−λ)·max sim(persona, selected)`, λ≈0.6, select 4. **Deterministic unit tests with fixed embeddings** — casting must be testable without any model call.
 7. **Diversity score.** Mean pairwise distance of the cast, normalized against a random-cast baseline (precompute the baseline over the library). Target ≥1.3× baseline. This is the number the UI shows during casting theater.
-8. **Casting API surface.** Function or thin endpoint per the Provide contract above; wire into P1's pipeline at the hour-12 checkpoint.
-9. **Stretch — output-diversity gate.** Embed the four opening statements; flag pairs above a similarity threshold. Only start this after the hour-12 checkpoint passes and P1's KPIs are being measured.
+8. **2D projection (`project.ts`).** Per-session PCA over the top-25 retrieval pool; project the 4 cast embeddings, normalize to [-1,1]² → `vector_map` in `casting_done` (spec 05 §project.ts). Feeds P3's vector-graph sidebar. Deterministic; unit-tested with synthetic embeddings.
+9. **Casting API surface.** Function or thin endpoint per the Provide contract above; wire into P1's pipeline at the hour-12 checkpoint.
+10. **Stretch — output-diversity gate.** Embed the four opening statements; flag pairs above a similarity threshold. Only start this after the hour-12 checkpoint passes and P1's KPIs are being measured.
 
 ## Checkpoints
 
