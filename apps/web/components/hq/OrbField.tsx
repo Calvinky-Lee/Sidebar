@@ -34,7 +34,7 @@ export function OrbField({ searchResults }: OrbFieldProps) {
 
   if (unreachable && !searchResults) {
     return (
-      <p className="text-sm text-neutral-500">
+      <p className="font-sans text-sm text-ink-soft">
         no memories yet — council service isn&apos;t running
       </p>
     );
@@ -42,7 +42,7 @@ export function OrbField({ searchResults }: OrbFieldProps) {
 
   if (shown && shown.length === 0) {
     return (
-      <p className="text-sm text-neutral-500">
+      <p className="font-sans text-sm text-ink-soft">
         {searchResults ? "no cases match that search" : "no memories yet — file your first case"}
       </p>
     );
