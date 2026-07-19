@@ -8,7 +8,7 @@ import {
 import { sessions, castings, verdicts } from "../db/collections.js";
 import { getEventsSince } from "../events/replay.js";
 import { subscribe } from "../events/bus.js";
-import { startSession, atConcurrencyCap } from "../session-runner.js";
+import { startSession, ConcurrencyCapError } from "../session-runner.js";
 import { env } from "../config/env.js";
 
 export const sessionRoutes = new Hono();
@@ -20,13 +20,16 @@ sessionRoutes.post("/sessions", async (c) => {
     return c.json({ error: "invalid request", details: parsed.error.flatten() }, 400);
   }
 
-  if (atConcurrencyCap()) {
-    return c.json({ error: "the council is in session — try again shortly" }, 429);
-  }
-
   const demo = parsed.data.demo ?? env.demoMode;
-  const id = await startSession(parsed.data.dilemma, parsed.data.context, demo);
-  return c.json({ id }, 201);
+  try {
+    const id = await startSession(parsed.data.dilemma, parsed.data.context, demo);
+    return c.json({ id }, 201);
+  } catch (err) {
+    if (err instanceof ConcurrencyCapError) {
+      return c.json({ error: "the council is in session — try again shortly" }, 429);
+    }
+    throw err;
+  }
 });
 
 sessionRoutes.get("/sessions", async (c) => {

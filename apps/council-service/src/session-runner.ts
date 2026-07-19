@@ -14,28 +14,46 @@ export function atConcurrencyCap(): boolean {
   return activeSessions.size >= MAX_CONCURRENT_SESSIONS;
 }
 
+/** Thrown by `startSession` when the concurrency cap is already full. */
+export class ConcurrencyCapError extends Error {}
+
 export async function startSession(
   dilemma: string,
   context: string | undefined,
   demo: boolean,
 ): Promise<string> {
+  // Check-and-reserve in one synchronous step (no `await` between them) — this
+  // is the only way to close the race: two concurrent calls can't interleave
+  // between a check and a Set insert that have no suspension point between
+  // them, whereas checking here and only inserting after later `await`s (the
+  // DB insert below) lets N simultaneous requests all see capacity free before
+  // any of them has registered, defeating the cap entirely.
+  if (activeSessions.size >= MAX_CONCURRENT_SESSIONS) {
+    throw new ConcurrencyCapError("the council is in session — try again shortly");
+  }
   const id = randomUUID();
-  const col = await sessions();
-  await col.insertOne({
-    _id: id,
-    dilemma,
-    context,
-    councilSize: 0,
-    status: "created",
-    createdAt: new Date(),
-  });
-
-  if (!demo) assertLiveModeConfigured();
-
   activeSessions.add(id);
+
+  try {
+    const col = await sessions();
+    await col.insertOne({
+      _id: id,
+      dilemma,
+      context,
+      councilSize: 0,
+      status: "created",
+      createdAt: new Date(),
+    });
+
+    if (!demo) assertLiveModeConfigured();
+  } catch (err) {
+    activeSessions.delete(id); // release the reservation — this session never started
+    throw err;
+  }
+
   const emit = await createEmitter(id);
   const run = demo
-    ? replayFixtureThroughEmitter(emit)
+    ? replayFixtureThroughEmitter(emit, { speed: env.demoSpeed })
     : (() => {
         const { modelClient, verdictModelClient, castingProvider, toolExecutor, emitter } =
           buildLiveDeliberationClients(env.geminiApiKey!, emit, env.costCapUsd);
