@@ -41,6 +41,53 @@ export function fakeClientWithResponse(response: unknown): FakeModelClient {
 }
 
 /**
+ * Finds the first balanced top-level `{...}` object in `text` and returns just
+ * that substring, ignoring braces inside string literals.
+ *
+ * Verified live against gemini-3.5-flash, gemini-3.1-pro-preview, and
+ * gemini-pro-latest: despite `responseMimeType: 'application/json'` (which is
+ * supposed to guarantee fence-free, single-object output), all three
+ * intermittently wrap the JSON in a ```fence```, append a stray extra `}`, or
+ * — worst case — leak chain-of-thought narration ("Wait, that's not right,
+ * let me redo this...") followed by a second/third corrected JSON object. In
+ * every observed case the FIRST balanced object was the intended answer, so
+ * brace-matching to the first close is more robust than a naive full-string
+ * `JSON.parse`.
+ */
+function extractFirstJsonObject(text: string): string {
+  const start = text.indexOf('{');
+  if (start === -1) {
+    throw new Error('no JSON object found in response');
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+
+  throw new Error('unterminated JSON object in response (likely truncated generation)');
+}
+
+const MAX_ATTEMPTS = 3;
+
+/**
  * Real Gemini-backed client. Throws at construction time if no API key is present
  * so callers fail fast instead of hanging on a network call — swap this in for
  * FakeModelClient the moment GEMINI_API_KEY is available; no other code changes.
@@ -61,26 +108,37 @@ export class GeminiModelClient implements ModelClient {
   }
 
   async generateStructured<T>({ system, user, schema }: GenerateStructuredOptions<T>): Promise<T> {
-    const res = await this.ai.models.generateContent({
-      model: this.model,
-      contents: [{ role: 'user', parts: [{ text: user }] }],
-      config: {
-        systemInstruction: system,
-        responseMimeType: 'application/json',
-      },
-    });
+    let lastError: unknown;
 
-    const text = res.text;
-    if (!text) {
-      throw new Error('Gemini response had no text content');
+    // Retries a genuinely truncated/malformed response — observed to be
+    // non-deterministic (the same prompt can succeed on a later attempt).
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const res = await this.ai.models.generateContent({
+        model: this.model,
+        contents: [{ role: 'user', parts: [{ text: user }] }],
+        config: {
+          systemInstruction: system,
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const text = res.text;
+      if (!text) {
+        lastError = new Error('Gemini response had no text content');
+        continue;
+      }
+
+      try {
+        const raw = JSON.parse(extractFirstJsonObject(text));
+        return schema.parse(raw);
+      } catch (err) {
+        lastError = new Error(
+          `Gemini response was not valid JSON (attempt ${attempt}/${MAX_ATTEMPTS}): ${text}`,
+          { cause: err },
+        );
+      }
     }
 
-    let raw: unknown;
-    try {
-      raw = JSON.parse(text);
-    } catch {
-      throw new Error(`Gemini response was not valid JSON: ${text}`);
-    }
-    return schema.parse(raw);
+    throw lastError;
   }
 }
