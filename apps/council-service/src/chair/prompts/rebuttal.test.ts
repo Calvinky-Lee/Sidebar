@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runRebuttal, didStanceChange, buildRebuttalPrompt, type OtherMemberContext } from './rebuttal.js';
-import { fakeClientWithResponse } from '../model-client.js';
+import { fakeClientWithResponse, GeminiModelClient } from '../model-client.js';
 import type { PersonaForBrief, Stance } from '../types.js';
 
 const traditionalist: PersonaForBrief = {
@@ -54,4 +54,14 @@ describe('didStanceChange', () => {
     const changed: Stance = { ...base, recommendation: 'Switch to annual billing.' };
     expect(didStanceChange(base, changed)).toBe(true);
   });
+});
+
+describe.skipIf(!process.env.GEMINI_API_KEY)('rebuttal prompt — live Gemini', () => {
+  it('produces a schema-valid rebuttal that engages the named opponent', async () => {
+    const client = new GeminiModelClient();
+    const result = await runRebuttal(client, traditionalist, 'Keep monthly billing.', others);
+    expect(result.fullText.toLowerCase()).toContain('gambler');
+    // eslint-disable-next-line no-console
+    console.log('--- live rebuttal ---', result);
+  }, 30_000);
 });

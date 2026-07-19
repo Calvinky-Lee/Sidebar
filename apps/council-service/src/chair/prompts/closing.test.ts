@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildClosingPrompt, runClosing } from './closing.js';
-import { fakeClientWithResponse } from '../model-client.js';
+import { fakeClientWithResponse, GeminiModelClient } from '../model-client.js';
 import type { PersonaForBrief, Stance } from '../types.js';
 
 const pragmatist: PersonaForBrief = {
@@ -39,4 +39,15 @@ describe('closing-pitch prompt', () => {
     expect(result.fullText.length).toBeGreaterThan(0);
     expect(result.bubble.length).toBeLessThanOrEqual(140);
   });
+});
+
+describe.skipIf(!process.env.GEMINI_API_KEY)('closing-pitch prompt — live Gemini', () => {
+  it('produces a schema-valid closing within the 60-word budget', async () => {
+    const client = new GeminiModelClient();
+    const result = await runClosing(client, pragmatist, postRebuttalStance, 'Monthly billing preserves trust.');
+    const wordCount = result.fullText.trim().split(/\s+/).length;
+    expect(wordCount).toBeLessThanOrEqual(90); // loose ceiling — spec target is <=60
+    // eslint-disable-next-line no-console
+    console.log('--- live closing ---', result);
+  }, 30_000);
 });

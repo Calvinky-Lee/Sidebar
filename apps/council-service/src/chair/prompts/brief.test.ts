@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runBrief, mentionsPersonaIdentity } from './brief.js';
-import { fakeClientWithResponse } from '../model-client.js';
+import { fakeClientWithResponse, GeminiModelClient } from '../model-client.js';
 import type { PersonaForBrief, IntakeResult } from '../types.js';
 
 const actuary: PersonaForBrief = {
@@ -50,3 +50,17 @@ describe('mentionsPersonaIdentity — structural smoke test', () => {
     expect(mentionsPersonaIdentity(genericBrief, actuary)).toBe(false);
   });
 });
+
+describe.skipIf(!process.env.GEMINI_API_KEY)(
+  'situation-brief prompt — live Gemini (real "engages the persona" check)',
+  () => {
+    it('the real brief engages the persona\'s stated identity, not a generic take', async () => {
+      const client = new GeminiModelClient();
+      const result = await runBrief(client, actuary, intake);
+      expect(mentionsPersonaIdentity(result.brief, actuary)).toBe(true);
+      expect(result.initialRead.length).toBeLessThanOrEqual(140);
+      // eslint-disable-next-line no-console
+      console.log('--- live brief ---', result);
+    }, 30_000);
+  },
+);

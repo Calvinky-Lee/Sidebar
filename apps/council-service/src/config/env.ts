@@ -25,6 +25,9 @@ export const env = {
   tavilyApiKey: optional("TAVILY_API_KEY"),
   costCapUsd: Number(optional("COST_CAP_USD") ?? "0.50"),
   demoMode: optional("DEMO_MODE") === "1",
+  // Realistic real-time pacing (1x) for `pnpm demo`; e2e tests crank this up so a
+  // 68s fixture replay finishes in well under a second.
+  demoSpeed: Number(optional("DEMO_SPEED") ?? "1"),
   port: Number(optional("PORT") ?? "8787"),
   corsOrigin: optional("WEB_ORIGIN") ?? "http://localhost:3000",
 };
