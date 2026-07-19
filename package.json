@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev:web": "pnpm --filter @council/web dev",
     "test": "vitest run",
     "test:watch": "vitest",
     "seed:generate": "tsx seed/generate-personas.ts",

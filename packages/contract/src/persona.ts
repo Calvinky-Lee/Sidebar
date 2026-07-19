@@ -36,6 +36,7 @@ export const AvatarSchema = z.object({
   hue: z.enum(HUES),
   form: z.enum(BLOB_FORMS),
 })
+export type Avatar = z.infer<typeof AvatarSchema>
 
 export const StanceProfileSchema = z.object({
   coreValues: z.array(z.string().min(1)).min(1),

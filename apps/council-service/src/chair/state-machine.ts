@@ -26,7 +26,7 @@ const TERMINAL_STATUSES: SessionStatus[] = ['done', 'failed'];
 /** The phase that follows `phase` on the happy path, or 'done' if `phase` is the last one. */
 export function nextPhaseAfter(phase: Phase): Phase | 'done' {
   const idx = PHASES.indexOf(phase);
-  return idx === PHASES.length - 1 ? 'done' : PHASES[idx + 1];
+  return idx === PHASES.length - 1 ? 'done' : PHASES[idx + 1]!;
 }
 
 /**
