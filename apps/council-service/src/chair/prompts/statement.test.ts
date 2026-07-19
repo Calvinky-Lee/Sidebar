@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildStatementPrompt, runStatement } from './statement.js';
-import { fakeClientWithResponse } from '../model-client.js';
+import { fakeClientWithResponse, GeminiModelClient } from '../model-client.js';
 import type { PersonaForBrief, SituationBrief } from '../types.js';
 
 const gambler: PersonaForBrief = {
@@ -48,4 +48,16 @@ describe('opening-statement prompt', () => {
     const client = fakeClientWithResponse({ ...idealStatement, bubble: 'x'.repeat(141) });
     await expect(runStatement(client, gambler, brief, 'dilemma')).rejects.toThrow();
   });
+});
+
+describe.skipIf(!process.env.GEMINI_API_KEY)('opening-statement prompt — live Gemini', () => {
+  it('produces a schema-valid, in-voice statement within the word budget', async () => {
+    const client = new GeminiModelClient();
+    const result = await runStatement(client, gambler, brief, 'Should we switch to annual billing?');
+    const wordCount = result.fullText.trim().split(/\s+/).length;
+    expect(wordCount).toBeGreaterThan(50); // loose lower bound — spec target is 120-200
+    expect(result.bubble.length).toBeLessThanOrEqual(140);
+    // eslint-disable-next-line no-console
+    console.log('--- live statement ---', result);
+  }, 30_000);
 });

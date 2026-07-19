@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runIntake, isGenericAxis } from './intake.js';
-import { fakeClientWithResponse } from '../model-client.js';
+import { fakeClientWithResponse, GeminiModelClient } from '../model-client.js';
 
 const idealIntake = {
   summary: 'Deciding whether to move the SaaS product from monthly to annual billing.',
@@ -45,3 +45,26 @@ describe('isGenericAxis — spec 04 acceptance heuristic', () => {
     expect(idealIntake.axesOfTension.some(isGenericAxis)).toBe(false);
   });
 });
+
+describe.skipIf(!process.env.GEMINI_API_KEY)(
+  'intake prompt — live Gemini (spec 04 §intake.ts real acceptance bar)',
+  () => {
+    const dilemmas = [
+      'Should our startup switch to annual billing?',
+      'Should I leave my stable corporate job to join an early-stage startup?',
+      'Should we lay off 15% of the team to extend our runway?',
+    ];
+
+    it('every dilemma produces real, non-generic axes of tension', async () => {
+      const client = new GeminiModelClient();
+      for (const dilemma of dilemmas) {
+        const result = await runIntake(client, dilemma);
+        expect(result.axesOfTension.some(isGenericAxis)).toBe(false);
+        expect(result.councilSize).toBeGreaterThanOrEqual(3);
+        expect(result.councilSize).toBeLessThanOrEqual(6);
+        // eslint-disable-next-line no-console
+        console.log(`--- ${dilemma} ---`, result.axesOfTension);
+      }
+    }, 30_000);
+  },
+);
