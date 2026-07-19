@@ -78,9 +78,9 @@ export function HqScene({ sessionId }: HqSceneProps) {
         )}
 
         <div className="relative mx-auto aspect-[16/10] min-h-[22rem] w-full max-w-4xl flex-1">
-          {state.councilSize ? (
+          {state.sidebarSize ? (
             <SeatRing
-              councilSize={state.councilSize}
+              sidebarSize={state.sidebarSize}
               seatOrder={state.seatOrder}
               members={state.members}
               onPin={(title, text) => setPinned({ title, text })}
@@ -88,7 +88,7 @@ export function HqScene({ sessionId }: HqSceneProps) {
             />
           ) : (
             <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-hand text-lg text-ink-soft">
-              convening the council…
+              convening the sidebar…
             </p>
           )}
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">

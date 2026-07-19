@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import type { VectorPoint } from "@council/contract";
+import type { VectorPoint } from "@sidebar/contract";
 import { HUES } from "@/lib/blobs";
 import type { MemberView } from "@/lib/session-store";
 
@@ -46,7 +46,7 @@ export function VectorGraph({
           </div>
 
           {!vectorMap ? (
-            <p className="mt-4 font-sans text-sm text-ink-soft">council being convened…</p>
+            <p className="mt-4 font-sans text-sm text-ink-soft">sidebar being convened…</p>
           ) : (
             <>
               <svg viewBox="-1.2 -1.2 2.4 2.4" className="mt-4 aspect-square w-full">
