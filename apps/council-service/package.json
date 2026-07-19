@@ -3,9 +3,21 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
     "@council/contract": "workspace:*",
+    "@google/genai": "^1.0.0",
+    "dotenv": "^16.4.5",
     "mongodb": "^6.10.0",
     "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4",
+    "tsx": "^4.16.2",
+    "vitest": "^2.0.5"
   }
 }
