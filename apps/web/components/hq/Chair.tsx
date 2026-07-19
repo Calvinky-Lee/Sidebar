@@ -7,11 +7,13 @@ interface ChairProps {
   size?: number;
   focused?: boolean;
   className?: string;
+  clickable?: boolean;
+  onClick?: () => void;
 }
 
 /** The Chair: a larger, neutral-toned figure at the center of the HQ — never a
  * persona hue, since hue is member identity everywhere else (spec 07). */
-export function Chair({ size = 120, focused = false, className }: ChairProps) {
+export function Chair({ size = 120, focused = false, className, clickable = false, onClick }: ChairProps) {
   return (
     <motion.svg
       viewBox="0 0 64 64"
@@ -19,8 +21,9 @@ export function Chair({ size = 120, focused = false, className }: ChairProps) {
       height={size}
       className={className}
       role="img"
-      aria-label="The Chair"
-      style={{ transformOrigin: "50% 100%" }}
+      aria-label={clickable ? "The Chair — click to view the ruling" : "The Chair"}
+      onClick={clickable ? onClick : undefined}
+      style={{ transformOrigin: "50% 100%", cursor: clickable ? "pointer" : undefined }}
       animate={
         focused
           ? { scale: [1, 1.05, 1] }

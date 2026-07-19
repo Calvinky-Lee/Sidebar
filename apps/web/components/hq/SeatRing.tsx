@@ -84,6 +84,12 @@ export function SeatRing({
                   }
                   index={pos.seat}
                   size={64}
+                  traits={{
+                    archetype: memberView.member.archetype,
+                    decisionStyle: memberView.member.stanceProfile.decisionStyle,
+                    biases: memberView.member.stanceProfile.biases,
+                    coreValues: memberView.member.stanceProfile.coreValues,
+                  }}
                 />
 
                 <div className="flex items-center gap-1">
@@ -91,13 +97,16 @@ export function SeatRing({
                     <Nameplate member={memberView.member} hue={HUES[memberView.hue]} />
                   </PersonaCard>
                   {memberView.locked && (
-                    <span title="stance locked" className="text-xs">
-                      🔒
+                    <span
+                      title="This member has pitched their final position to the Chair and won't change it again."
+                      className="flex items-center gap-0.5 rounded-full border border-ink/40 bg-card px-1.5 py-0.5 font-sans text-[9px] text-ink-soft"
+                    >
+                      🔒 final
                     </span>
                   )}
                 </div>
 
-                <ToolChips tools={memberView.tools} />
+                <ToolChips tools={memberView.tools} onPin={onPin} />
 
                 {memberView.recused ? (
                   <span className="font-sans text-[10px] text-ink-soft">recused</span>

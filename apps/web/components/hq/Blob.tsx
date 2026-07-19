@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import type { Avatar } from "@council/contract";
 import { BLOB_BODY_PATH, HUES, type BlobState } from "@/lib/blobs";
+import { personaFace, type PersonaTraits } from "@/lib/persona-face";
 
 interface BlobProps {
   avatar: Avatar;
@@ -11,11 +12,102 @@ interface BlobProps {
   className?: string;
   /** Staggers the idle bounce so a row of blobs animates left-to-right in sequence. */
   index?: number;
+  /** Real persona description — drives the eyebrows + accessory below. Omit for
+   * placeholder/preview blobs (e.g. the home page) and the face stays plain. */
+  traits?: PersonaTraits;
 }
 
-export function Blob({ avatar, state = "idle", size = 72, className, index = 0 }: BlobProps) {
+function Eyebrows({ style }: { style: ReturnType<typeof personaFace>["eyebrows"] }) {
+  const stroke = "#1a1a1a";
+  switch (style) {
+    case "flat":
+      return (
+        <path d="M20 24H28M36 24H44" stroke={stroke} strokeWidth={1.6} strokeLinecap="round" />
+      );
+    case "angled":
+      return (
+        <path
+          d="M20 25L28 22M44 25L36 22"
+          stroke={stroke}
+          strokeWidth={1.6}
+          strokeLinecap="round"
+        />
+      );
+    case "raised":
+      return (
+        <path
+          d="M20 23Q24 19 28 23M36 23Q40 19 44 23"
+          stroke={stroke}
+          strokeWidth={1.6}
+          strokeLinecap="round"
+          fill="none"
+        />
+      );
+    case "furrowed":
+      return (
+        <path
+          d="M20 22L28 25M44 22L36 25"
+          stroke={stroke}
+          strokeWidth={1.6}
+          strokeLinecap="round"
+        />
+      );
+    case "none":
+    default:
+      return null;
+  }
+}
+
+function AccessoryMark({ style }: { style: ReturnType<typeof personaFace>["accessory"] }) {
+  const stroke = "#1a1a1a";
+  switch (style) {
+    case "glasses":
+      return (
+        <g stroke={stroke} strokeWidth={1.3} fill="none">
+          <circle cx={24} cy={30} r={5.5} />
+          <circle cx={40} cy={30} r={5.5} />
+          <path d="M29.5 30H34.5" />
+        </g>
+      );
+    case "monocle":
+      return (
+        <g stroke={stroke} strokeWidth={1.3} fill="none">
+          <circle cx={40} cy={30} r={5.5} />
+          <path d="M45 34L48 44" strokeLinecap="round" />
+        </g>
+      );
+    case "mustache":
+      return (
+        <path
+          d="M22 36.5C25 34.5 28.5 34.5 32 36.5C35.5 34.5 39 34.5 42 36.5C40.5 35.5 37.5 33.5 32 35.5C26.5 33.5 23.5 35.5 22 36.5Z"
+          fill={stroke}
+        />
+      );
+    case "bow":
+      return (
+        <g stroke={stroke} strokeWidth={1.2} strokeLinejoin="round">
+          <path d="M46 12L40 9C38.5 8.3 37.7 10 39 11L42 13L39 15C37.7 16 38.5 17.7 40 17L46 14Z" fill="white" />
+          <path d="M46 12L52 9C53.5 8.3 54.3 10 53 11L50 13L53 15C54.3 16 53.5 17.7 52 17L46 14Z" fill="white" />
+          <circle cx={46} cy={13} r={1.6} fill={stroke} stroke="none" />
+        </g>
+      );
+    case "star":
+      return (
+        <path
+          d="M46 32L47 34.5L49.5 35L47.5 36.7L48 39.2L46 37.8L44 39.2L44.5 36.7L42.5 35L45 34.5Z"
+          fill={stroke}
+        />
+      );
+    case "none":
+    default:
+      return null;
+  }
+}
+
+export function Blob({ avatar, state = "idle", size = 72, className, index = 0, traits }: BlobProps) {
   const color = HUES[avatar.hue];
   const desaturated = state === "dissent";
+  const face = traits ? personaFace(traits) : { eyebrows: "none" as const, accessory: "none" as const };
 
   return (
     <motion.svg
@@ -69,15 +161,19 @@ export function Blob({ avatar, state = "idle", size = 72, className, index = 0 }
         <path d="M26 40C29 43 35 43 38 40" stroke="#1a1a1a" strokeWidth={2} strokeLinecap="round" fill="none" />
       )}
 
-      {/* furrowed brow, dissent only */}
-      {state === "dissent" && (
+      {/* furrowed brow, dissent only — takes priority over the persona's usual eyebrows */}
+      {state === "dissent" ? (
         <path
           d="M20 24L27 26M44 24L37 26"
           stroke="#1a1a1a"
           strokeWidth={1.6}
           strokeLinecap="round"
         />
+      ) : (
+        <Eyebrows style={face.eyebrows} />
       )}
+
+      <AccessoryMark style={face.accessory} />
     </motion.svg>
   );
 }

@@ -18,34 +18,40 @@ interface PhaseTrackerProps {
 }
 
 export function PhaseTracker({ phase, done = false }: PhaseTrackerProps) {
-  const currentIndex = STEPS.findIndex((s) => s.phase === phase);
+  const total = STEPS.length;
+  const currentIndex = Math.max(0, STEPS.findIndex((s) => s.phase === phase));
+  const progress = done ? 1 : (currentIndex + 0.5) / total;
+  const label = done ? "Decision reached" : STEPS[currentIndex]?.label;
 
   return (
-    <ol className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2 sm:gap-3">
-      {STEPS.map((step, i) => {
-        const isDone = done || i < currentIndex;
-        const isCurrent = !done && i === currentIndex;
-        return (
-          <li key={step.phase} className="flex items-center gap-1.5">
-            <motion.span
-              animate={isCurrent ? { scale: [1, 1.15, 1] } : { scale: 1 }}
-              transition={{ duration: 1.4, repeat: isCurrent ? Infinity : 0, ease: "easeInOut" }}
-              className={`flex h-6 w-6 items-center justify-center rounded-full border-2 border-ink font-hand text-xs ${
-                isDone ? "bg-sage text-card" : isCurrent ? "bg-terracotta text-card" : "bg-card text-ink-soft"
-              }`}
-            >
-              {isDone ? "✓" : i + 1}
-            </motion.span>
-            <span
-              className={`font-sans text-xs sm:text-sm ${
-                isCurrent ? "text-ink" : "text-ink-soft"
-              }`}
-            >
-              {step.label}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
+    <div className="flex w-full max-w-xl flex-col items-center gap-1.5">
+      <p className="font-hand text-sm text-ink-soft">
+        step {done ? total : currentIndex + 1} of {total} — {label}
+      </p>
+
+      <div className="relative h-3 w-full overflow-hidden rounded-full border-2 border-ink bg-card shadow-[2px_2px_0_var(--shadow-beige)]">
+        <motion.div
+          className="h-full bg-terracotta"
+          initial={false}
+          animate={{ width: `${progress * 100}%` }}
+          transition={{ type: "spring", bounce: 0.15, duration: 0.6 }}
+        />
+        {!done && (
+          <motion.div
+            className="absolute top-0 h-full w-3 bg-terracotta/60"
+            style={{ left: `${progress * 100}%` }}
+            animate={{ opacity: [0.6, 0.2, 0.6] }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+          />
+        )}
+        {STEPS.slice(0, -1).map((step, i) => (
+          <span
+            key={step.phase}
+            className="absolute top-0 h-full w-px bg-ink/20"
+            style={{ left: `${((i + 1) / total) * 100}%` }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
