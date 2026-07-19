@@ -1,3 +1,5 @@
+import { HqScene } from "@/components/hq/HqScene";
+
 export default async function SessionPage({
   params,
 }: {
@@ -5,13 +7,5 @@ export default async function SessionPage({
 }) {
   const { id } = await params;
 
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
-      <h1 className="text-2xl font-semibold text-neutral-100">Live HQ — session {id}</h1>
-      <p className="max-w-md text-neutral-400">
-        The radial HQ view (Chair, member seats, ThinkBubbles, SSE streaming) isn&apos;t
-        built yet — this is a routing stub per spec 07.
-      </p>
-    </main>
-  );
+  return <HqScene sessionId={id} />;
 }

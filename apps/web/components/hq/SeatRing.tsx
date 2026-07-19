@@ -1,0 +1,121 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Blob } from "@/components/hq/Blob";
+import { Nameplate } from "@/components/hq/Nameplate";
+import { PersonaCard } from "@/components/hq/PersonaCard";
+import { ThinkBubble } from "@/components/hq/ThinkBubble";
+import { ToolChips } from "@/components/hq/ToolChip";
+import { HUES } from "@/lib/blobs";
+import { bubbleSizeNotch, seatLayout } from "@/lib/radial";
+import type { MemberView } from "@/lib/session-store";
+
+interface SeatRingProps {
+  councilSize: number;
+  seatOrder: (string | null)[];
+  members: Record<string, MemberView>;
+  onPin?: (title: string, text: string) => void;
+  dissentPersonaId?: string;
+}
+
+/** One-shot "changed their mind" beat — mounts once when a member's stance flips. */
+function StanceChangeBanner() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(false), 2600);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          initial={{ opacity: 0, y: -6, scale: 0.9 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute -top-6 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border-2 border-ink bg-terracotta px-2 py-0.5 font-hand text-xs text-card shadow-[1px_1px_0_var(--shadow-beige)]"
+        >
+          changed their mind!
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function SeatRing({
+  councilSize,
+  seatOrder,
+  members,
+  onPin,
+  dissentPersonaId,
+}: SeatRingProps) {
+  const positions = seatLayout(councilSize);
+  const compact = bubbleSizeNotch(councilSize) === "compact";
+
+  return (
+    <>
+      {positions.map((pos) => {
+        const personaId = seatOrder[pos.seat];
+        const memberView = personaId ? members[personaId] : undefined;
+        const quotedName = memberView?.phases.rebuttal?.quotedPersonaId
+          ? members[memberView.phases.rebuttal.quotedPersonaId]?.member.name
+          : undefined;
+
+        return (
+          <div
+            key={pos.seat}
+            className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
+            style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+          >
+            {memberView ? (
+              <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: memberView.recused ? 0.4 : 1 }}
+                transition={{ type: "spring", bounce: 0.45, duration: 0.6 }}
+                className="relative flex flex-col items-center gap-2"
+              >
+                {memberView.stanceChanged && <StanceChangeBanner />}
+
+                <Blob
+                  avatar={memberView.member.avatar}
+                  state={
+                    dissentPersonaId === memberView.member.id ? "dissent" : memberView.blobState
+                  }
+                  index={pos.seat}
+                  size={64}
+                />
+
+                <div className="flex items-center gap-1">
+                  <PersonaCard member={memberView.member} hue={HUES[memberView.hue]}>
+                    <Nameplate member={memberView.member} hue={HUES[memberView.hue]} />
+                  </PersonaCard>
+                  {memberView.locked && (
+                    <span title="stance locked" className="text-xs">
+                      🔒
+                    </span>
+                  )}
+                </div>
+
+                <ToolChips tools={memberView.tools} />
+
+                {memberView.recused ? (
+                  <span className="font-sans text-[10px] text-ink-soft">recused</span>
+                ) : (
+                  <ThinkBubble
+                    member={memberView}
+                    compact={compact}
+                    onPin={onPin}
+                    quotedName={quotedName}
+                  />
+                )}
+              </motion.div>
+            ) : (
+              <div className="h-16 w-16 rounded-full border-2 border-dashed border-ink/30" />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
